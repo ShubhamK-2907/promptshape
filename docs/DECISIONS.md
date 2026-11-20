@@ -1,0 +1,56 @@
+# Decisions
+
+One line per decision, with the reason. "Pending Qn" means the owner has not confirmed it yet (see SPEC §13).
+
+- D01 **maturin mixed project from the first task** (pending Q1): one build system for the whole project, and the wheel pipeline is proven before the Rust work matters.
+- D02 **Cargo workspace with a pure-Rust core crate and a separate PyO3 crate**: `cargo test` and `cargo bench` on the core need no Python to link against.
+- D03 **abi3 wheels with a Python 3.10 floor**: one wheel per platform covers every supported Python version.
+- D04 **`platformdirs` is the only runtime dependency; the Anthropic SDK is an optional extra** (pending Q2): rendering should install without an HTTP stack.
+- D05 **Public API is data in, string out; every format detail is private**: output details can then be fixed or frozen in one place without breaking callers.
+- D06 **Data types are frozen, slotted dataclasses validated on construction**: bad data fails early, with its location, not deep inside a renderer.
+- D07 **A bare JSON value is renderable without a wrapper class**: less ceremony for the most common input.
+- D08 **Format names are strings until 1.1, then a plain `Enum` (not a `str` enum)**: follows the version plan, and a plain enum cannot be confused with a string at runtime.
+- D09 **`FormatCost.format` stays a `str` through 1.x**: changing a field's type in a minor release would break callers.
+- D10 **XML content is entity-escaped, not wrapped in CDATA**: CDATA breaks on content containing `]]>`.
+- D11 **XML uses elements only, no attributes**: one escaping rule, and no attribute whitespace normalisation to reason about.
+- D12 **XML-illegal characters become U+FFFD and CR becomes `&#13;`**: output must always parse, and parsers rewrite a raw CR.
+- D13 **The XML document body tag is `document_content`**: it follows Anthropic's documented long-document prompt layout.
+- D14 **Markdown cells backslash-escape both pipe and backslash, and use `<br>` for line breaks**: this is the GFM convention, and escaping the backslash too makes naive and cmark-style parsers agree.
+- D15 **Document body and text tool output are a positional tail with no escaping**: the largest field costs zero extra tokens and nothing after it can be forged.
+- D16 **Markdown fences are one backtick longer than the longest run in the payload**: CommonMark's own rule, so content is never rewritten.
+- D17 **Plain-text tables are tab-separated with backslash escapes**: compact and exactly reversible.
+- D18 **String payloads are written unquoted outside the JSON format**: quoting long text tool output adds tokens and escape noise.
+- D19 **JSON is compact with keys in insertion order**: fewest tokens, deterministic, and the caller's order is kept.
+- D20 **Lone surrogates, NaN and Infinity are rejected, not repaired**: they cannot be encoded as UTF-8 or JSON, and silent repair hides bugs.
+- D21 **Known lossy cases are documented, not prevented** (`None` vs `""`, literal `<br>`): the guarantee is intact structure; JSON is the lossless choice.
+- D22 **Test parsers share no code with the renderers**: a shared bug would otherwise pass on both sides.
+- D23 **Goldens are byte files marked `-text` in `.gitattributes`**: a Windows checkout must not rewrite line endings.
+- D24 **Format cost is count(with data) minus count(baseline) using a fixed carrier block** (pending Q6): an empty message may be rejected, and subtraction cancels overhead and system-added tokens.
+- D25 **Cache key is (model ID, sha256 of the full request), with the model also a column**: counts are model-specific, and hashing the whole request catches any change of request shape.
+- D26 **The cache stores counts, never prompt text**: a user cache directory should not collect user data.
+- D27 **Cache entries do not expire**: a count for one model and request is stable; `cache clear` covers a tokenizer change under the same model ID.
+- D28 **One retry layer, ours, with SDK retries switched off**: total wait is predictable and the logic is testable against the fake.
+- D29 **Retries honour `retry-after`, otherwise use full-jitter exponential backoff, with a bounded attempt count**: standard practice, and a spend-cap 429 must not loop forever.
+- D30 **No client-side throttle**: the lowest usage tier allows 5,000 count requests per minute.
+- D31 **The library never reads environment variables; callers pass `client` or `api_key`**: `ANTHROPIC_API_KEY` in the environment makes Claude Code bill the API account instead of the subscription.
+- D32 **The CLI, examples and scripts read `PROMPTSHAPE_ANTHROPIC_API_KEY`**: same reason, and the name cannot collide with the SDK's variable.
+- D33 **Synchronous API only**: count calls are few and cached; async can be added later without breaking anything.
+- D34 **The network guard patches sockets, not an HTTP library**: it keeps working whatever HTTP client the SDK uses.
+- D35 **Test guards have no opt-out; live calls live only in `scripts/live_count.py` behind `--live`**: an opt-out marker would eventually be used by mistake.
+- D36 **pytest runs with `filterwarnings = error`**: the deprecation tests in 1.1 only mean something if stray warnings fail the suite.
+- D37 **The pre-tokenizer uses `fancy-regex`**: the GPT-2 pattern needs a lookahead, and it is the engine tiktoken uses.
+- D38 **Training breaks ties by highest count, then smallest byte pair**: results must not depend on hash-map iteration order.
+- D39 **GPT-2 merges come from OpenAI's published files with pinned sha256 and are vendored for tests** (pending Q4): tests run offline, and the Modified MIT licence allows redistribution with its notice.
+- D40 **Expected GPT-2 ids are generated by tiktoken once and committed**: tiktoken downloads its data on first use, which the network guard forbids in tests.
+- D41 **`encode` treats all input as ordinary text, with no special tokens**: it matches `encode_ordinary` and text cannot inject control tokens.
+- D42 **`train_merges` and the encode merge loop are written by the human author and fenced with markers**: writing them is the learning goal of the extension.
+- D43 **Benchmarks call all three libraries through Python, single-threaded, median of 5 after a warm-up**: it measures what a Python user gets, and the median resists noise.
+- D44 **CI uses a `changes` job plus an always-running `ci-ok` gate, not `paths-ignore`**: a skipped required check would leave docs-only pull requests pending forever.
+- D45 **CI concurrency is grouped per pull request with cancel-in-progress**: superseded runs are wasted minutes.
+- D46 **The release workflow is the only one not triggered by pull requests**: publishing must run from a tag, never from a pull request.
+- D47 **Publishing uses trusted publishing, TestPyPI first, both behind reviewed environments**: no stored tokens, and a human approves every upload.
+- D48 **The version lives once, in the Cargo workspace**: Python and Rust versions cannot drift.
+- D49 **Wheel targets are Linux x86_64 and aarch64 (manylinux), musllinux x86_64, macOS x86_64 and arm64, Windows x86_64**: the common platforms; others install from the sdist.
+- D50 **`model` is required in the library; the CLI and examples default to `claude-opus-5-5`** (pending Q3): counts are model-specific, so the library should not guess.
+- D51 **Golden output bytes are part of the frozen API from 1.0**: changing output changes callers' token costs.
+- D52 **Branches are updated by new commits or merging `main`, never by force-push**: review history stays intact.
