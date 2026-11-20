@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(~/.ssh/**)",
+      "Read(~/.aws/**)",
+      "Read(~/.zshrc)",
+      "Read(~/Documents/**)",
+      "Read(~/Downloads/**)"
+    ]
+  },
+  "sandbox": {
+    "enabled": true,
+    "filesystem": {
+      "denyRead": ["~/.ssh", "~/.aws", "~/.zshrc", "~/Documents", "~/Downloads", "~/Desktop"],
+      "allowRead": ["."]
+    }
+  }
+}
